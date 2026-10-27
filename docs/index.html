@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tesla Drain Forecaster — Live Demo (POC)</title>
+<meta name="description" content="Free Tesla overnight phantom-drain predictor. Interactive proof-of-concept demo of tesla-drain-forecaster: learn a car's drain pattern from recorded nights and predict tonight's loss.">
+<style>
+  :root { --bg:#0b0e13; --panel:#141922; --line:#232c3a; --text:#e8edf4; --muted:#93a1b5; --red:#e82127; --green:#37d67a; --amber:#f5b544; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text); }
+  .wrap { max-width:900px; margin:0 auto; padding:24px 16px 64px; }
+  header { text-align:center; padding:28px 0 8px; }
+  h1 { font-size:2rem; margin:0 0 8px; }
+  h1 .red { color:var(--red); }
+  .sub { color:var(--muted); max-width:660px; margin:0 auto; line-height:1.55; }
+  .badge { display:inline-block; margin-top:14px; padding:4px 12px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:.82rem; }
+  .badge b { color:var(--amber); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin-top:18px; }
+  .panel h2 { margin:0 0 10px; font-size:1.1rem; }
+  .rules { display:flex; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:.92rem; align-items:end; }
+  .rules label { display:flex; flex-direction:column; gap:4px; }
+  .rules input, .rules select { background:#0d1117; border:1px solid var(--line); border-radius:8px; color:var(--text); padding:7px 9px; font-size:.95rem; }
+  .checks { display:flex; gap:16px; flex-wrap:wrap; color:var(--text); font-size:.95rem; margin-top:12px; }
+  .checks label { display:flex; gap:6px; align-items:center; cursor:pointer; }
+  button { border:1px solid var(--line); background:#0d1117; color:var(--text); border-radius:999px; padding:8px 14px; cursor:pointer; font-size:.9rem; margin-top:12px; }
+  button:hover { border-color:var(--red); }
+  button.primary { background:var(--red); border-color:var(--red); color:#fff; }
+  .result { font-size:1.25rem; margin-top:14px; line-height:1.5; }
+  .result .big { color:var(--green); font-weight:700; }
+  .result .warn { color:var(--amber); font-weight:700; }
+  .breakdown { color:var(--muted); font-size:.92rem; margin-top:6px; line-height:1.6; }
+  table { width:100%; border-collapse:collapse; font-size:.92rem; margin-top:10px; }
+  th { text-align:left; color:var(--muted); font-weight:600; border-bottom:1px solid var(--line); padding:6px 4px; }
+  td { padding:6px 4px; border-bottom:1px solid #1b2330; }
+  td.num, th.num { text-align:right; }
+  tr.clickable { cursor:pointer; }
+  tr.clickable:hover td { background:#1b2330; }
+  tr.selected td { background:#1e2a1e; }
+  .note { color:var(--muted); font-size:.85rem; line-height:1.55; margin-top:14px; }
+  a { color:var(--green); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tesla <span class="red">Drain Forecaster</span></h1>
+    <p class="sub">Why did your Tesla lose 6% overnight — and what will it lose tonight?
+    Pick tonight's conditions and get the same forecast the app computes from
+    recorded nights: a quiet-night baseline plus what each factor adds, learned
+    from the nights themselves. Click any night below to see why it lost what it lost.</p>
+    <span class="badge"><b>DEMO DATA</b> — pretend car, pretend nights. This page never connects to a real Tesla.</span>
+  </header>
+
+  <div class="panel">
+    <h2>Tonight's forecast</h2>
+    <div class="checks">
+      <label><input type="checkbox" id="cSentry" checked> Sentry Mode on</label>
+      <label><input type="checkbox" id="cCold" checked> Cold night (overnight low below 40°F)</label>
+      <label><input type="checkbox" id="cCop"> Cabin Overheat Protection on</label>
+      <label><input type="checkbox" id="cUpdate"> Software update tonight</label>
+      <label><input type="checkbox" id="cPlugged" checked> Plugged in (not charging)</label>
+    </div>
+    <div class="rules" style="margin-top:12px">
+      <label>Alert threshold (% loss)<input id="threshold" type="number" value="4" min="1" max="15" step="0.5"></label>
+    </div>
+    <div class="result" id="result"></div>
+    <div class="breakdown" id="breakdown"></div>
+    <p class="note">Method: baseline = median loss of quiet nights (no factor on) over the
+    last 14 nights. Each factor delta = median loss of nights with the factor minus
+    median loss of nights without it (both groups need 2+ nights, otherwise a
+    transparent default: Sentry +1.5, cold +1.0, Cabin Overheat Protection +0.5,
+    software update +1.0, plugged in −0.3). Forecast = baseline + tonight's deltas,
+    clamped to 0–15%.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Demo nights — click one to explain it</h2>
+    <table id="nights">
+      <thead><tr><th>Night</th><th class="num">Bedtime %</th><th class="num">Morning %</th><th class="num">Lost</th><th>Factors</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="breakdown" id="explain" style="margin-top:12px"></div>
+    <p class="note">Try it: the worst night is Oct 21 — Sentry on AND a cold night, 4.6% lost.
+    Turn Sentry off in tonight's forecast above and watch the prediction drop by the
+    learned Sentry delta.</p>
+  </div>
+
+  <div class="panel">
+    <h2>What the real app adds</h2>
+    <p class="note" style="margin-top:0">The full app (<a href="https://github.com/rtmalikian/tesla-drain-forecaster">github.com/rtmalikian/tesla-drain-forecaster</a>)
+    records real nights from your Tesla (or ones you type in), keeps them on your own
+    computer, and exposes an OpenAI-compatible forecast API
+    (<code>/v1/chat/completions</code>, <code>/v1/models</code>, <code>/v1/embeddings</code>)
+    so any AI client can answer "predict tonight's loss" or "why did I lose 6% Tuesday?"
+    from your own numbers. It never wakes or commands a car and sends your data only
+    to the AI backend you configure — or nowhere at all, with the built-in rules engine.</p>
+  </div>
+</div>
+<script>
+// [date, evening %, morning %, sentry, cold, cop, plugged, update]
+const DEMO = [
+  ["Oct 05", 68, 65.3, true,  false, false, true,  false],
+  ["Oct 06", 69, 66.4, false, true,  false, false, false],
+  ["Oct 07", 70, 68.8, false, false, false, false, false],
+  ["Oct 08", 71, 69.8, false, false, true,  true,  false],
+  ["Oct 09", 72, 68.9, true,  false, false, false, false],
+  ["Oct 10", 68, 66.8, false, false, false, false, false],
+  ["Oct 11", 69, 66.8, false, true,  false, true,  false],
+  ["Oct 12", 70, 68.9, false, false, false, false, false],
+  ["Oct 13", 71, 67.8, true,  false, false, false, false],
+  ["Oct 14", 72, 71.3, false, false, false, true,  false],
+  ["Oct 15", 68, 64.4, false, false, true,  false, true ],
+  ["Oct 16", 69, 66.3, false, true,  false, false, false],
+  ["Oct 17", 70, 67.3, true,  false, false, true,  false],
+  ["Oct 18", 71, 69.9, false, false, false, false, false],
+  ["Oct 19", 72, 70.8, false, false, false, false, false],
+  ["Oct 20", 68, 67.3, false, false, false, true,  false],
+  ["Oct 21", 69, 64.4, true,  true,  false, false, false],
+  ["Oct 22", 70, 68.3, false, false, true,  false, false],
+  ["Oct 23", 71, 70.3, false, false, false, true,  false],
+  ["Oct 24", 72, 70.9, false, false, false, false, false],
+  ["Oct 25", 68, 64.8, true,  false, false, false, false],
+];
+const FACTORS = [
+  ["Sentry Mode on", 3, 1.5],
+  ["cold night", 4, 1.0],
+  ["Cabin Overheat Protection on", 5, 0.5],
+  ["software update", 7, 1.0],
+  ["plugged in (not charging)", 6, -0.3],
+];
+function median(a) {
+  const s = a.slice().sort((x, y) => x - y);
+  return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+}
+function loss(n) { return +(n[1] - n[2]).toFixed(1); }
+function learn() {
+  const nights = DEMO.slice(-14); // last 14 nights, like the app
+  const quiet = nights.filter(n => !FACTORS.some(f => n[f[1]]));
+  let baseline = quiet.length ? median(quiet.map(loss)) : median(nights.map(loss));
+  const deltas = {};
+  for (const [name, idx, def] of FACTORS) {
+    const withF = nights.filter(n => n[idx]).map(loss);
+    const without = nights.filter(n => !n[idx]).map(loss);
+    deltas[name] = (withF.length >= 2 && without.length >= 2)
+      ? Math.max(-2, Math.min(6, median(withF) - median(without)))
+      : def;
+  }
+  return { baseline, deltas };
+}
+function predict(conditions) {
+  const { baseline, deltas } = learn();
+  let total = baseline;
+  const parts = [["baseline (quiet nights)", baseline]];
+  for (const [name] of FACTORS) {
+    if (conditions[name]) { total += deltas[name]; parts.push([name, deltas[name]]); }
+  }
+  return { predicted: Math.max(0, Math.min(15, total)), parts, baseline, deltas };
+}
+function condFromNight(n) {
+  const c = {};
+  for (const [name, idx] of FACTORS) c[name] = n[idx];
+  return c;
+}
+function renderForecast() {
+  const conditions = {
+    "Sentry Mode on": document.getElementById("cSentry").checked,
+    "cold night": document.getElementById("cCold").checked,
+    "Cabin Overheat Protection on": document.getElementById("cCop").checked,
+    "software update": document.getElementById("cUpdate").checked,
+    "plugged in (not charging)": document.getElementById("cPlugged").checked,
+  };
+  const threshold = parseFloat(document.getElementById("threshold").value) || 4;
+  const { predicted, parts } = predict(conditions);
+  const bits = parts.map(([l, v]) => `${l} ${v >= 0 ? "+" : ""}${v.toFixed(1)}`).join(" + ");
+  document.getElementById("result").innerHTML =
+    `Tonight's predicted loss <span class="big">${predicted.toFixed(1)}%</span>` +
+    (predicted >= threshold ? ` &nbsp;·&nbsp; <span class="warn">⚠ above your ${threshold}% alert threshold</span>` : "");
+  document.getElementById("breakdown").textContent =
+    `Baseline (quiet nights) ${learn().baseline.toFixed(1)}%. Breakdown: ${bits}. ` +
+    `Learned deltas: ` + FACTORS.map(([name]) => `${name} ${learn().deltas[name] >= 0 ? "+" : ""}${learn().deltas[name].toFixed(1)}`).join(", ") + ".";
+}
+function renderTable() {
+  const tbody = document.getElementById("rows");
+  tbody.innerHTML = "";
+  DEMO.forEach((n, i) => {
+    const tr = document.createElement("tr");
+    tr.className = "clickable";
+    const on = FACTORS.filter(f => n[f[1]]).map(f => f[0]);
+    tr.innerHTML = `<td>${n[0]}</td><td class="num">${n[1]}%</td><td class="num">${n[2]}%</td>` +
+      `<td class="num">${loss(n).toFixed(1)}%</td><td>${on.length ? on.join(", ") : "quiet night"}</td>`;
+    tr.addEventListener("click", () => {
+      tbody.querySelectorAll("tr").forEach(r => r.classList.remove("selected"));
+      tr.classList.add("selected");
+      const { predicted, parts } = predict(condFromNight(n));
+      const actual = loss(n);
+      const residual = actual - predicted;
+      const verdict = Math.abs(residual) <= 0.5 ? "about what the model expected"
+        : residual > 0 ? `${residual.toFixed(1)} points higher than expected`
+        : `${(-residual).toFixed(1)} points lower than expected`;
+      document.getElementById("explain").innerHTML =
+        `<b>${n[0]}:</b> lost ${actual.toFixed(1)}% (${n[1]}% → ${n[2]}%). ` +
+        `Predicted ${predicted.toFixed(1)}% — ${verdict} ` +
+        `(${parts.map(([l, v]) => `${l} ${v >= 0 ? "+" : ""}${v.toFixed(1)}`).join(", ")}).`;
+    });
+    tbody.appendChild(tr);
+  });
+}
+["cSentry", "cCold", "cCop", "cUpdate", "cPlugged", "threshold"].forEach(id =>
+  document.getElementById(id).addEventListener("change", renderForecast));
+renderTable();
+renderForecast();
+</script>
+</body>
+</html>

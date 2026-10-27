@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tesla-drain-forecaster"
+version = "0.1.0"
+description = "Free Tesla phantom-drain forecaster: learn each car's overnight drain pattern from recorded nights and predict tonight's loss before bed, with an OpenAI-compatible coach API — pluggable LLM backend and full offline rules engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Raphael Malikian", email = "rtmalikian@gmail.com" }]
+keywords = ["tesla", "fleet-api", "openai-compatible", "llm", "ai", "chat", "ollama", "phantom-drain", "vampire-drain", "sentry-mode", "battery", "ev", "model-3", "model-y"]
+dependencies = [
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Home Automation",
+    "Topic :: Utilities",
+]
+
+[project.scripts]
+tdrain = "tesla_drain_forecaster.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rtmalikian/tesla-drain-forecaster"
+Issues = "https://github.com/rtmalikian/tesla-drain-forecaster/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
